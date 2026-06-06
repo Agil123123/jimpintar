@@ -8,15 +8,15 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Jimpitan">
 <meta name="description" content="Aplikasi pencatatan kas jimpitan warga desa">
-<title>JimPintar</title>
+<title>Jimpitan Desa</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 :root{
-  --green:#1D9E75;--green2:#0F6E56;--green3:#127e68;--green-bg:#E1F5EE;
+  --green:#1D9E75;--green2:#0F6E56;--green3:#085041;--green-bg:#E1F5EE;
   --amber:#BA7517;--amber-bg:#FAEEDA;
   --red:#E24B4A;--red-bg:#FCEBEB;
   --blue:#185FA5;--blue-bg:#E6F1FB;
@@ -164,10 +164,14 @@ textarea{resize:vertical;min-height:80px}
 .toast.error{background:var(--red)}
 .toast.warn{background:var(--amber)}
 
-/* ── Barcode cards ── */
+/* ── Barcode/QR cards ── */
 .bc-card{background:var(--white);border-radius:var(--r);padding:14px;text-align:center;border:1px solid var(--border);margin-bottom:10px}
 .bc-name{font-size:14px;font-weight:700;margin-bottom:2px}
 .bc-rt{font-size:12px;color:var(--text2);margin-bottom:10px}
+@media print{
+  .header,.nav,.btn,.card-hdr>*:not(.bc-card){display:none}
+  .bc-card{break-inside:avoid;border:1px solid #ccc;page-break-inside:avoid}
+}
 
 /* ── Pending sync indicator ── */
 .pending-banner{background:var(--amber-bg);border:1px solid #FDE68A;border-radius:var(--r-sm);padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;font-size:13px;color:#92400E}
@@ -271,29 +275,43 @@ textarea{resize:vertical;min-height:80px}
 
   <!-- ══ SCAN ══ -->
   <div id="page-scan" class="page">
-    <div class="scan-wrap" onclick="simulateScan()">
+    <!-- Camera scan area -->
+    <div class="scan-wrap" id="scanWrap">
       <div class="scan-header">
-        <h2>Scan Barcode</h2>
-        <p>Arahkan kamera ke barcode di rumah warga</p>
+        <h2>Scan QR Code</h2>
+        <p>Arahkan kamera ke QR code di rumah warga</p>
       </div>
-      <div class="viewfinder">
+      <div class="viewfinder" id="viewfinder">
         <div class="scan-line"></div>
         <div class="corner tl"></div><div class="corner tr"></div>
         <div class="corner bl"></div><div class="corner br"></div>
-        <div class="scan-hint">Tap untuk simulasi scan</div>
+        <div class="scan-hint" id="scanHint">Tap untuk mulai kamera</div>
       </div>
-      <div class="scan-footer">Mendukung format CODE128 · QR Code</div>
+      <!-- Live camera preview & canvas (hidden until activated) -->
+      <video id="camVideo" playsinline style="display:none;width:200px;height:200px;object-fit:cover;border-radius:8px;margin:0 auto 0;display:none"></video>
+      <canvas id="camCanvas" style="display:none"></canvas>
+      <div style="display:flex;gap:8px;padding:12px 16px">
+        <button class="btn btn-primary" style="flex:1" onclick="startCamera()" id="btnStartCam">📷 Buka Kamera</button>
+        <button class="btn btn-gray" style="flex:1;margin-top:0" onclick="stopCamera()" id="btnStopCam" style="display:none">✕ Tutup</button>
+      </div>
+      <div class="scan-footer" id="scanStatus">Atau gunakan input manual di bawah</div>
     </div>
+
     <div class="card">
-      <div class="card-hdr">Input Manual</div>
+      <div class="card-hdr">Input Manual / Demo Scan</div>
       <div class="form-group">
         <label>Kode Warga atau Nama</label>
         <input type="text" id="manualKode" placeholder="WRG001 atau Pak Slamet…">
       </div>
-      <button class="btn btn-primary" onclick="manualInput()">Cari Warga</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" style="flex:1" onclick="manualInput()">Cari Warga</button>
+        <button class="btn btn-outline" style="flex:1;margin-top:0" onclick="simulateScan()">Demo Scan</button>
+      </div>
     </div>
+
     <div class="card">
-      <div class="card-hdr">Barcode Warga — Cetak & Tempel di Rumah</div>
+      <div class="card-hdr">QR Code Warga — Cetak & Tempel di Rumah</div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:12px">Setiap QR menyimpan ID + nama warga. Scan dengan kamera HP biasa.</p>
       <div id="barcodeList"></div>
     </div>
   </div>
@@ -332,8 +350,8 @@ textarea{resize:vertical;min-height:80px}
       <div class="settings-label">Info Desa</div>
       <div class="setting-row single">
         <div class="setting-inner">
-          <div class="form-group"><label>Nama Desa</label><input type="text" id="setDesa" placeholder="Dukuh Wonogiri"></div>
-          <div class="form-group"><label>RT / RW</label><input type="text" id="setRTRW" placeholder="RT 10 / RW 03"></div>
+          <div class="form-group"><label>Nama Desa</label><input type="text" id="setDesa" placeholder="Desa Gayamharjo"></div>
+          <div class="form-group"><label>RT / RW</label><input type="text" id="setRTRW" placeholder="RT 03 / RW 02"></div>
           <div class="form-group"><label>Nominal Jimpitan per Hari (Rp)</label><input type="number" id="setNominal" placeholder="500"></div>
           <button class="btn btn-primary" onclick="saveSettings()">Simpan</button>
         </div>
@@ -445,7 +463,7 @@ function defaultState() {
       {id:2,wargaId:'WRG002',nama:'Ibu Sri Mulyani',nominal:1000,tanggal:today(),catatan:'2 hari',synced:true},
       {id:3,wargaId:'WRG003',nama:'Pak Joko Susilo',nominal:500,tanggal:today(),catatan:'',synced:false},
     ],
-    cfg: {desa:'Dukuh Wonogiri',rtrw:'RT 10 / RW 03',nominal:500,sheetsUrl:'',apiKey:''},
+    cfg: {desa:'Desa Gayamharjo',rtrw:'RT 03 / RW 02',nominal:500,sheetsUrl:'',apiKey:''},
     currentKasTab:'minggu',
     currentRecap:'semua',
   };
@@ -493,6 +511,7 @@ function nav(name, el) {
 }
 
 function renderPage(name) {
+  if (name !== 'scan' && camStream) stopCamera();
   if (name === 'kas') renderKas();
   if (name === 'scan') renderBarcodes();
   if (name === 'warga') renderWarga();
@@ -560,9 +579,91 @@ function switchKasTab(t, el) {
 // ══════════════════════════════════════
 //  SCAN & INPUT
 // ══════════════════════════════════════
+// ══ QR CAMERA SCAN ══
+let camStream = null;
+let scanInterval = null;
+
+async function startCamera() {
+  try {
+    document.getElementById('scanStatus').textContent = 'Meminta izin kamera…';
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: {ideal:640}, height: {ideal:640} }
+    });
+    camStream = stream;
+    const vid = document.getElementById('camVideo');
+    vid.srcObject = stream;
+    vid.style.display = 'block';
+    vid.play();
+    document.getElementById('scanHint').style.display = 'none';
+    document.getElementById('scanStatus').textContent = '🟢 Kamera aktif — arahkan ke QR Code';
+    document.getElementById('btnStartCam').style.display = 'none';
+    document.getElementById('btnStopCam').style.display = 'block';
+    document.querySelector('.scan-line').style.display = 'block';
+    startQRDecode();
+  } catch(e) {
+    document.getElementById('scanStatus').textContent = '⚠ Kamera tidak dapat diakses. Gunakan input manual.';
+    toast('Izin kamera ditolak', 'error');
+  }
+}
+
+function stopCamera() {
+  if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  if (scanInterval) { clearInterval(scanInterval); scanInterval = null; }
+  const vid = document.getElementById('camVideo');
+  vid.style.display = 'none'; vid.srcObject = null;
+  document.getElementById('scanHint').style.display = 'flex';
+  document.getElementById('scanStatus').textContent = 'Atau gunakan input manual di bawah';
+  document.getElementById('btnStartCam').style.display = 'block';
+  document.getElementById('btnStopCam').style.display = 'none';
+}
+
+function startQRDecode() {
+  const vid = document.getElementById('camVideo');
+  const canvas = document.getElementById('camCanvas');
+  const ctx = canvas.getContext('2d');
+  // Use BarcodeDetector API if available (Chrome Android)
+  if ('BarcodeDetector' in window) {
+    const detector = new BarcodeDetector({ formats: ['qr_code', 'code_128', 'ean_13'] });
+    scanInterval = setInterval(async () => {
+      if (vid.readyState < 2) return;
+      try {
+        const barcodes = await detector.detect(vid);
+        if (barcodes.length > 0) {
+          const raw = barcodes[0].rawValue;
+          handleScanResult(raw);
+        }
+      } catch {}
+    }, 400);
+  } else {
+    // Fallback: draw frames to canvas for manual decode attempt
+    scanInterval = setInterval(() => {
+      if (vid.readyState < 2) return;
+      canvas.width = vid.videoWidth || 320;
+      canvas.height = vid.videoHeight || 320;
+      ctx.drawImage(vid, 0, 0);
+      // Can't decode QR without library — prompt manual input
+    }, 1000);
+    document.getElementById('scanStatus').textContent = '📱 Perangkat ini gunakan input manual untuk decode QR';
+  }
+}
+
+function handleScanResult(raw) {
+  stopCamera();
+  // QR data format: "WRG001|Bapak Slamet Widodo" or just "WRG001"
+  const parts = raw.split('|');
+  const code = parts[0].trim();
+  const w = S.warga.find(x => x.id === code || x.nama.toLowerCase().includes(code.toLowerCase()));
+  if (w) {
+    toast('✅ QR Terdeteksi: ' + w.nama);
+    setTimeout(() => openPayModal(w), 400);
+  } else {
+    toast('QR tidak dikenali: ' + code, 'error');
+  }
+}
+
 function simulateScan() {
   const w = S.warga[Math.floor(Math.random() * S.warga.length)];
-  toast('📷 Scan: '+w.nama);
+  toast('📷 Demo scan: '+w.nama);
   setTimeout(() => openPayModal(w), 500);
 }
 
@@ -576,19 +677,42 @@ function manualInput() {
 }
 
 function renderBarcodes() {
-  document.getElementById('barcodeList').innerHTML =
-    S.warga.map(w =>
-      `<div class="bc-card">
-        <div class="bc-name">${w.nama}</div>
-        <div class="bc-rt">${w.id} · RT ${w.rt}/RW ${w.rw} · No. ${w.alamat}</div>
-        <svg id="bc_${w.id}"></svg>
-      </div>`
-    ).join('');
-  if (window.JsBarcode) {
+  // Stop camera when leaving scan page
+  const container = document.getElementById('barcodeList');
+  container.innerHTML = S.warga.map(w =>
+    `<div class="bc-card">
+      <div class="bc-name">${w.nama}</div>
+      <div class="bc-rt">${w.id} · RT ${w.rt}/RW ${w.rw} · No. ${w.alamat}</div>
+      <div id="qr_${w.id}" style="display:flex;justify-content:center;margin:8px 0"></div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">${w.id}</div>
+      <button class="btn btn-gray btn-sm" style="margin-top:8px" onclick="downloadQR('${w.id}','${w.nama.replace(/'/g,'\\'')}')">↓ Unduh QR</button>
+    </div>`
+  ).join('');
+
+  // Generate QR codes
+  if (window.QRCode) {
     S.warga.forEach(w => {
-      try { JsBarcode('#bc_'+w.id, w.id, {format:'CODE128',width:1.6,height:38,displayValue:true,fontSize:11,margin:4}); } catch {}
+      const el = document.getElementById('qr_'+w.id);
+      if (!el) return;
+      // Encode ID + nama agar saat scan langsung dikenali
+      new QRCode(el, {
+        text: w.id + '|' + w.nama,
+        width: 160, height: 160,
+        colorDark: '#085041', colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
+      });
     });
   }
+}
+
+function downloadQR(id, nama) {
+  const el = document.querySelector('#qr_'+id+' canvas, #qr_'+id+' img');
+  if (!el) { toast('QR belum siap', 'warn'); return; }
+  const src = el.tagName === 'CANVAS' ? el.toDataURL('image/png') : el.src;
+  const a = document.createElement('a');
+  a.href = src; a.download = 'QR_'+id+'_'+nama.replace(/\s+/g,'_')+'.png';
+  a.click();
+  toast('✓ QR '+nama.split(' ')[0]+' diunduh!');
 }
 
 // ══════════════════════════════════════
@@ -780,20 +904,27 @@ async function pushToSheets(data) {
   const { sheetsUrl, apiKey } = S.cfg;
   if (!sheetsUrl) return false;
   try {
+    // Kirim key di dalam body JSON (Google Apps Script tidak bisa baca custom header)
+    const payload = { ...data, key: apiKey || '' };
+    // Gunakan text/plain agar tidak trigger CORS preflight
     const res = await fetch(sheetsUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey || '' },
-      body: JSON.stringify(data)
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload)
     });
     if (res.ok) {
-      // Mark synced
-      if (data.action === 'add_jimpitan') {
-        const k = S.kas.find(k => k.id === data.id);
-        if (k) k.synced = true;
-        save(); renderKas();
+      const json = await res.json().catch(() => ({}));
+      if (json.status === 'ok') {
+        if (data.action === 'add_jimpitan') {
+          const k = S.kas.find(k => k.id === data.id);
+          if (k) k.synced = true;
+          save(); renderKas();
+        }
+        updateSyncStatus('ok');
+        return true;
+      } else {
+        console.warn('Sheets error:', json.message);
       }
-      updateSyncStatus('ok');
-      return true;
     }
   } catch (e) {
     updateSyncStatus('err');
@@ -823,12 +954,11 @@ async function syncWargaFromSheets() {
   if (!sheetsUrl) { toast('URL Sheets belum diisi', 'warn'); return; }
   toast('Mengambil data warga…', '', 4000);
   try {
-    const res = await fetch(sheetsUrl+'?action=get_all', {
-      headers: { 'X-API-Key': apiKey || '' }
-    });
+    // Kirim key sebagai URL parameter untuk GET request
+    const url = sheetsUrl + '?action=get_all&key=' + encodeURIComponent(apiKey || '');
+    const res = await fetch(url);
     const json = await res.json();
     if (json.status === 'ok' && json.warga?.length) {
-      // Merge: add new warga not in local
       let added = 0;
       json.warga.forEach(w => {
         if (!S.warga.find(x => x.id === w.id)) {
@@ -839,7 +969,7 @@ async function syncWargaFromSheets() {
       save(); renderWarga();
       toast(added > 0 ? added+' warga baru ditambahkan ✓' : 'Data warga sudah terkini ✓');
     } else {
-      toast('Gagal mengambil data warga', 'error');
+      toast('Gagal mengambil data: ' + (json.message||''), 'error');
     }
   } catch (e) {
     toast('Tidak dapat terhubung ke Sheets', 'error');
@@ -904,7 +1034,8 @@ async function testConnection() {
   const el = document.getElementById('connStatus');
   el.style.display = 'block'; el.innerHTML = '⏳ Menguji koneksi…';
   try {
-    const res = await fetch(url+'?action=test', { headers:{'X-API-Key': key} });
+    // Kirim key sebagai URL parameter
+    const res = await fetch(url+'?action=test&key='+encodeURIComponent(key));
     const json = await res.json();
     if (json.status === 'ok') {
       el.innerHTML = '<span class="sync-dot ok"></span> Koneksi berhasil! Sheets siap digunakan.';
@@ -937,111 +1068,127 @@ function showScriptGuide() {
 }
 
 function getScriptCode() {
-  const key = S.cfg.apiKey || 'ISI_KEY_ANDA_DI_SINI';
+  const key = S.cfg.apiKey || 'ISI_SECRET_KEY_ANDA';
   return `// ═══ Jimpitan Desa - Google Apps Script ═══
-// Paste kode ini di: Ekstensi → Apps Script
-// Lalu Deploy → New deployment → Web app
-// Jalankan sbg: Me | Akses: Anyone
+// 1. Buka Google Spreadsheet Anda
+// 2. Ekstensi → Apps Script → hapus kode lama → paste ini
+// 3. Simpan (Ctrl+S)
+// 4. Deploy → New deployment → Web app
+//    Execute as : Me
+//    Who has access : Anyone
+// 5. Copy URL → paste ke Pengaturan aplikasi
 
-const SECRET_KEY = '${key}';
+const SECRET_KEY = '${key}';  // ← Harus sama persis dengan di aplikasi
 const SS_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
 
+// ── Handler POST (kirim data dari aplikasi) ──
 function doPost(e) {
   const res = ContentService.createTextOutput();
   res.setMimeType(ContentService.MimeType.JSON);
   try {
-    const apiKey = e.parameter.key || 
-                   (e.headers && e.headers['X-API-Key']) || '';
-    if (apiKey !== SECRET_KEY) {
+    const body = JSON.parse(e.postData.contents);
+    // Validasi key dari body JSON
+    if (body.key !== SECRET_KEY) {
       return res.setContent(JSON.stringify(
         {status:'error', message:'Unauthorized'}));
     }
-    const data = JSON.parse(e.postData.contents);
     let result;
-    if (data.action === 'add_jimpitan') result = addJimpitan(data);
-    else if (data.action === 'add_warga') result = addWarga(data);
+    if (body.action === 'add_jimpitan') result = addJimpitan(body);
+    else if (body.action === 'add_warga') result = addWarga(body);
     else result = {message:'Unknown action'};
-    res.setContent(JSON.stringify({status:'ok', ...result}));
+    return res.setContent(JSON.stringify({status:'ok', ...result}));
   } catch(err) {
-    res.setContent(JSON.stringify(
+    return res.setContent(JSON.stringify(
       {status:'error', message:err.toString()}));
   }
-  return res;
 }
 
+// ── Handler GET (ambil data / test koneksi) ──
 function doGet(e) {
   const res = ContentService.createTextOutput();
   res.setMimeType(ContentService.MimeType.JSON);
-  const key = e.parameter.key || 
-              (e.headers && e.headers['X-API-Key']) || '';
-  if (e.parameter.action === 'test') {
+  const key = e.parameter.key || '';
+  const action = e.parameter.action || '';
+
+  // Test koneksi: cek apakah key benar
+  if (action === 'test') {
     const ok = key === SECRET_KEY;
     return res.setContent(JSON.stringify({
       status: ok ? 'ok' : 'error',
-      message: ok ? 'Koneksi berhasil!' : 'Key salah'
+      message: ok ? 'Koneksi berhasil!' : 'Secret key salah'
     }));
   }
+  // Semua aksi lain perlu key valid
   if (key !== SECRET_KEY) {
     return res.setContent(JSON.stringify(
-      {status:'error',message:'Unauthorized'}));
+      {status:'error', message:'Unauthorized'}));
   }
-  return res.setContent(JSON.stringify({
-    status:'ok', ...getAllData()
-  }));
+  if (action === 'get_all') {
+    return res.setContent(JSON.stringify({status:'ok', ...getAllData()}));
+  }
+  return res.setContent(JSON.stringify({status:'error', message:'Unknown action'}));
 }
 
+// ── Tambah data jimpitan ──
 function addJimpitan(d) {
   const sh = getOrCreateSheet('Jimpitan',
-    ['ID','Warga ID','Nama','Nominal','Tanggal',
-     'Catatan','Timestamp']);
-  sh.appendRow([d.id, d.wargaId, d.nama, d.nominal,
-    d.tanggal, d.catatan||'',
-    new Date().toLocaleString('id-ID')]);
+    ['ID','Warga ID','Nama','Nominal','Tanggal','Catatan','Timestamp']);
+  sh.appendRow([
+    d.id, d.wargaId, d.nama, d.nominal,
+    d.tanggal, d.catatan || '',
+    new Date().toLocaleString('id-ID')
+  ]);
   const lr = sh.getLastRow();
-  sh.getRange(lr,4).setNumberFormat('Rp #,##0');
-  return {message:'OK'};
+  sh.getRange(lr, 4).setNumberFormat('Rp #,##0');
+  return {message:'Jimpitan tersimpan'};
 }
 
+// ── Tambah warga baru ──
 function addWarga(d) {
   const sh = getOrCreateSheet('Warga',
     ['ID','Nama','RT','RW','Alamat','No HP','Tgl Daftar']);
-  // Cek duplikat
-  const existing = sh.getDataRange().getValues();
-  if (existing.some(r => r[0] === d.id)) 
-    return {message:'Warga sudah ada'};
-  sh.appendRow([d.id, d.nama, d.rt||'03', d.rw||'02',
-    d.alamat||'', d.noHp||'',
-    new Date().toLocaleString('id-ID')]);
-  return {message:'OK'};
+  // Cek duplikat berdasarkan ID
+  if (sh.getLastRow() > 1) {
+    const ids = sh.getRange(2, 1, sh.getLastRow()-1, 1).getValues().flat();
+    if (ids.includes(d.id)) return {message:'Warga sudah ada'};
+  }
+  sh.appendRow([
+    d.id, d.nama, d.rt || '03', d.rw || '02',
+    d.alamat || '', d.noHp || '',
+    new Date().toLocaleString('id-ID')
+  ]);
+  return {message:'Warga ditambahkan'};
 }
 
+// ── Ambil semua data ──
 function getAllData() {
   const ss = SpreadsheetApp.openById(SS_ID);
   const shJ = ss.getSheetByName('Jimpitan');
   const shW = ss.getSheetByName('Warga');
-  const jData = shJ && shJ.getLastRow()>1 ?
-    shJ.getRange(2,1,shJ.getLastRow()-1,7).getValues() : [];
-  const wData = shW && shW.getLastRow()>1 ?
-    shW.getRange(2,1,shW.getLastRow()-1,7).getValues() : [];
+  const jData = (shJ && shJ.getLastRow() > 1)
+    ? shJ.getRange(2, 1, shJ.getLastRow()-1, 7).getValues() : [];
+  const wData = (shW && shW.getLastRow() > 1)
+    ? shW.getRange(2, 1, shW.getLastRow()-1, 7).getValues() : [];
   return {
-    jimpitan: jData.map(r=>({
-      id:r[0],wargaId:r[1],nama:r[2],
-      nominal:r[3],tanggal:r[4],catatan:r[5]
+    jimpitan: jData.map(r => ({
+      id:r[0], wargaId:r[1], nama:r[2],
+      nominal:r[3], tanggal:r[4], catatan:r[5]
     })),
-    warga: wData.map(r=>({
-      id:r[0],nama:r[1],rt:r[2],
-      rw:r[3],alamat:r[4],noHp:r[5]
+    warga: wData.map(r => ({
+      id:r[0], nama:r[1], rt:r[2],
+      rw:r[3], alamat:r[4], noHp:r[5]
     }))
   };
 }
 
+// ── Buat sheet baru jika belum ada ──
 function getOrCreateSheet(name, headers) {
   const ss = SpreadsheetApp.openById(SS_ID);
   let sh = ss.getSheetByName(name);
   if (!sh) {
     sh = ss.insertSheet(name);
     sh.appendRow(headers);
-    sh.getRange(1,1,1,headers.length)
+    sh.getRange(1, 1, 1, headers.length)
       .setFontWeight('bold')
       .setBackground('#085041')
       .setFontColor('#ffffff');
@@ -1050,6 +1197,7 @@ function getOrCreateSheet(name, headers) {
   return sh;
 }`;
 }
+
 
 function copyScript() {
   navigator.clipboard.writeText(document.getElementById('scriptCode').textContent)
