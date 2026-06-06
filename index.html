@@ -421,11 +421,11 @@ textarea{resize:vertical;min-height:80px}
 //  KONFIGURASI UTAMA — Edit di sini
 // ══════════════════════════════════════
 const APP_CONFIG = {
-  desa: 'Dukuh Wonogiri',        // Nama desa/dukuh
-  rtrw: 'RT 10 / RW 03',         // RT dan RW
-  nominal: 500,                   // Nominal jimpitan per hari (Rp)
-  sheetsUrl: 'https://script.google.com/macros/s/AKfycbwbqbeTVKkg31r66buAC0u-7xnWsarEG8oswvY4mpM-vUQqhqQwsx-FmF2A_0MrIN4SZw/exec',
-  // apiKey: '',                  // Kosongkan jika script tanpa validasi key
+  desa     : 'Dukuh Wonogiri',   // ← Ganti nama desa di sini
+  rtrw     : 'RT 10 / RW 03',    // ← Ganti RT/RW di sini
+  nominal  : 500,                 // ← Nominal jimpitan per hari (Rp)
+  sheetsUrl: 'https://script.google.com/macros/s/AKfycbwbqbeTVKkg31r66buAC0u-7xnWsarEG8oswvY4mpM-vUQqhqQwsx-FmF2A_0MrIN4SZw/exec', // ← URL Apps Script
+  apiKey   : '',                  // ← Kosong jika script tanpa validasi key
 };
 // ══════════════════════════════════════
 
@@ -453,14 +453,13 @@ function defaultState() {
 }
 
 let S = LS.get('jimpitanPWA') || defaultState();
-// Selalu gunakan konfigurasi dari kode (APP_CONFIG), bukan dari localStorage
-// Sehingga perubahan di GitHub langsung berlaku ke semua pengguna
+// Selalu paksa cfg dari APP_CONFIG — perubahan GitHub langsung berlaku
 S.cfg = {
-  desa: APP_CONFIG.desa,
-  rtrw: APP_CONFIG.rtrw,
-  nominal: APP_CONFIG.nominal,
-  sheetsUrl: APP_CONFIG.sheetsUrl,
-  apiKey: APP_CONFIG.apiKey || '',
+  desa     : APP_CONFIG.desa      || '',
+  rtrw     : APP_CONFIG.rtrw      || '',
+  nominal  : APP_CONFIG.nominal   || 500,
+  sheetsUrl: APP_CONFIG.sheetsUrl || '',
+  apiKey   : APP_CONFIG.apiKey    || '',
 };
 function save() {
   // Jangan simpan cfg ke localStorage — selalu ambil dari APP_CONFIG
