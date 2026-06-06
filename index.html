@@ -350,27 +350,10 @@ textarea{resize:vertical;min-height:80px}
       <div class="settings-label">Info Desa</div>
       <div class="setting-row single">
         <div class="setting-inner">
-          <div class="form-group"><label>Nama Desa</label><input type="text" id="setDesa" placeholder="Desa Gayamharjo"></div>
-          <div class="form-group"><label>RT / RW</label><input type="text" id="setRTRW" placeholder="RT 03 / RW 02"></div>
-          <div class="form-group"><label>Nominal Jimpitan per Hari (Rp)</label><input type="number" id="setNominal" placeholder="500"></div>
-          <button class="btn btn-primary" onclick="saveSettings()">Simpan</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="settings-section">
-      <div class="settings-label">Keamanan API</div>
-      <div class="setting-row single">
-        <div class="setting-inner">
-          <p style="font-size:13px;color:var(--text2);margin-bottom:12px">Secret key digunakan untuk memvalidasi permintaan dari aplikasi ke Google Apps Script. Salin key yang sama ke script Google Anda.</p>
-          <div class="form-group">
-            <label>Secret API Key</label>
-            <div class="input-icon">
-              <input type="password" id="setApiKey" placeholder="Buat key acak, contoh: jmp_rt03_2024xyz">
-              <button class="eye-btn" onclick="toggleKeyVisibility()">👁</button>
-            </div>
-          </div>
-          <button class="btn btn-gray" onclick="generateKey()" style="margin-top:4px">🎲 Generate Key Otomatis</button>
+          <div class="about-row"><span>Nama Desa</span><span class="about-val" id="setDesa">–</span></div>
+          <div class="about-row"><span>RT / RW</span><span class="about-val" id="setRTRW">–</span></div>
+          <div class="about-row"><span>URL Sheets</span><span class="about-val" style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis" id="setSheetsUrlInfo">–</span></div>
+          <p style="font-size:12px;color:var(--text3);margin-top:10px">✏️ Edit konfigurasi di file <strong>index.html</strong> bagian <strong>APP_CONFIG</strong> di GitHub.</p>
         </div>
       </div>
     </div>
@@ -379,16 +362,8 @@ textarea{resize:vertical;min-height:80px}
       <div class="settings-label">Google Sheets</div>
       <div class="setting-row single">
         <div class="setting-inner">
-          <div class="form-group">
-            <label>URL Apps Script (Web App URL)</label>
-            <input type="text" id="setSheetsUrl" placeholder="https://script.google.com/macros/s/.../exec">
-          </div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-primary" style="flex:1" onclick="saveSettings()">Simpan</button>
-            <button class="btn btn-outline" style="flex:1" onclick="testConnection()">Test</button>
-          </div>
-          <div id="connStatus" style="margin-top:10px;font-size:13px;display:none"></div>
-          <hr class="divider">
+          <div id="connStatus" style="margin-top:4px;font-size:13px;display:none"></div>
+          <button class="btn btn-outline" onclick="testConnection()" style="margin-bottom:8px">🔗 Test Koneksi Sheets</button>
           <button class="btn btn-gray" onclick="showScriptGuide()">📋 Lihat Kode Apps Script</button>
         </div>
       </div>
@@ -442,6 +417,18 @@ textarea{resize:vertical;min-height:80px}
 // ══════════════════════════════════════
 //  STATE & STORAGE
 // ══════════════════════════════════════
+// ══════════════════════════════════════
+//  KONFIGURASI UTAMA — Edit di sini
+// ══════════════════════════════════════
+const APP_CONFIG = {
+  desa: 'Dukuh Wonogiri',        // Nama desa/dukuh
+  rtrw: 'RT 10 / RW 03',         // RT dan RW
+  nominal: 500,                   // Nominal jimpitan per hari (Rp)
+  sheetsUrl: 'https://script.google.com/macros/s/AKfycbwbqbeTVKkg31r66buAC0u-7xnWsarEG8oswvY4mpM-vUQqhqQwsx-FmF2A_0MrIN4SZw/exec',
+  // apiKey: '',                  // Kosongkan jika script tanpa validasi key
+};
+// ══════════════════════════════════════
+
 const COLORS=['#1D9E75','#BA7517','#185FA5','#E24B4A','#8B5CF6','#0891B2','#059669','#D97706'];
 const LS = {
   get: k => { try { return JSON.parse(localStorage.getItem(k)) } catch { return null } },
@@ -450,27 +437,36 @@ const LS = {
 
 function defaultState() {
   return {
-    warga: [
-      {id:'WRG001',nama:'Bapak Slamet Widodo',rt:'03',rw:'02',alamat:'5',noHp:'',c:0},
-      {id:'WRG002',nama:'Ibu Sri Mulyani',rt:'03',rw:'02',alamat:'7',noHp:'',c:1},
-      {id:'WRG003',nama:'Pak Joko Susilo',rt:'03',rw:'02',alamat:'9',noHp:'',c:2},
-      {id:'WRG004',nama:'Bu Sari Dewi',rt:'03',rw:'02',alamat:'11',noHp:'',c:3},
-      {id:'WRG005',nama:'Pak Hendra Adi',rt:'03',rw:'02',alamat:'13',noHp:'',c:4},
-      {id:'WRG006',nama:'Bu Ngatini',rt:'03',rw:'02',alamat:'15',noHp:'',c:5},
-    ],
-    kas: [
-      {id:1,wargaId:'WRG001',nama:'Bapak Slamet Widodo',nominal:500,tanggal:today(),catatan:'',synced:true},
-      {id:2,wargaId:'WRG002',nama:'Ibu Sri Mulyani',nominal:1000,tanggal:today(),catatan:'2 hari',synced:true},
-      {id:3,wargaId:'WRG003',nama:'Pak Joko Susilo',nominal:500,tanggal:today(),catatan:'',synced:false},
-    ],
-    cfg: {desa:'Desa Gayamharjo',rtrw:'RT 03 / RW 02',nominal:500,sheetsUrl:'',apiKey:''},
+    warga: [],
+    kas: [],
+    // cfg diambil dari APP_CONFIG, bukan dari localStorage
+    cfg: {
+      desa: APP_CONFIG.desa,
+      rtrw: APP_CONFIG.rtrw,
+      nominal: APP_CONFIG.nominal,
+      sheetsUrl: APP_CONFIG.sheetsUrl,
+      apiKey: APP_CONFIG.apiKey || '',
+    },
     currentKasTab:'minggu',
     currentRecap:'semua',
   };
 }
 
 let S = LS.get('jimpitanPWA') || defaultState();
-function save() { LS.set('jimpitanPWA', S) }
+// Selalu gunakan konfigurasi dari kode (APP_CONFIG), bukan dari localStorage
+// Sehingga perubahan di GitHub langsung berlaku ke semua pengguna
+S.cfg = {
+  desa: APP_CONFIG.desa,
+  rtrw: APP_CONFIG.rtrw,
+  nominal: APP_CONFIG.nominal,
+  sheetsUrl: APP_CONFIG.sheetsUrl,
+  apiKey: APP_CONFIG.apiKey || '',
+};
+function save() {
+  // Jangan simpan cfg ke localStorage — selalu ambil dari APP_CONFIG
+  const toSave = {...S, cfg: undefined};
+  LS.set('jimpitanPWA', toSave);
+}
 
 // ══ Utils ══
 function today() { return new Date().toISOString().split('T')[0] }
@@ -1010,23 +1006,22 @@ function setSyncBtn(txt, cls='') {
 //  SETTINGS
 // ══════════════════════════════════════
 function renderSettings() {
-  document.getElementById('setDesa').value = S.cfg.desa || '';
-  document.getElementById('setRTRW').value = S.cfg.rtrw || '';
-  document.getElementById('setNominal').value = S.cfg.nominal || 500;
-  document.getElementById('setSheetsUrl').value = S.cfg.sheetsUrl || '';
-  document.getElementById('setApiKey').value = S.cfg.apiKey || '';
+  // Info desa — read only, dari APP_CONFIG
+  const desaEl = document.getElementById('setDesa');
+  if (desaEl) desaEl.textContent = APP_CONFIG.desa || '–';
+  const rtrwEl = document.getElementById('setRTRW');
+  if (rtrwEl) rtrwEl.textContent = APP_CONFIG.rtrw || '–';
+  const urlEl = document.getElementById('setSheetsUrlInfo');
+  if (urlEl) urlEl.textContent = APP_CONFIG.sheetsUrl ? '✓ Terkonfigurasi' : 'Belum diisi';
+  // Data lokal
   document.getElementById('infoWarga').textContent = S.warga.length + ' orang';
   document.getElementById('infoTrx').textContent = S.kas.length + ' transaksi';
   document.getElementById('infoPending').textContent = S.kas.filter(k=>!k.synced).length + ' antrian';
 }
 
 function saveSettings() {
-  S.cfg.desa = document.getElementById('setDesa').value.trim() || S.cfg.desa;
-  S.cfg.rtrw = document.getElementById('setRTRW').value.trim() || S.cfg.rtrw;
-  S.cfg.nominal = parseInt(document.getElementById('setNominal').value) || 500;
-  S.cfg.sheetsUrl = document.getElementById('setSheetsUrl').value.trim();
-  S.cfg.apiKey = document.getElementById('setApiKey').value.trim();
-  save(); updateHeader(); toast('✓ Pengaturan disimpan!');
+  // Konfigurasi diambil dari APP_CONFIG di kode, bukan dari form
+  toast('Edit APP_CONFIG di GitHub untuk ubah konfigurasi');
 }
 
 function generateKey() {
@@ -1043,9 +1038,9 @@ function toggleKeyVisibility() {
 }
 
 async function testConnection() {
-  const url = document.getElementById('setSheetsUrl').value.trim();
-  const key = document.getElementById('setApiKey').value.trim();
-  if (!url) { toast('Isi URL terlebih dahulu', 'warn'); return; }
+  const url = APP_CONFIG.sheetsUrl;
+  const key = APP_CONFIG.apiKey || '';
+  if (!url) { toast('URL belum diisi di APP_CONFIG', 'warn'); return; }
   const el = document.getElementById('connStatus');
   el.style.display = 'block'; el.innerHTML = '⏳ Menguji koneksi…';
   try {
@@ -1305,6 +1300,10 @@ if ('serviceWorker' in navigator) {
 }
 
 // ══ Init ══
+// Auto sinkron warga dari Sheets saat pertama buka (jika warga lokal kosong)
+if (S.warga.length === 0 && S.cfg.sheetsUrl) {
+  setTimeout(() => syncWargaFromSheets(), 1500);
+}
 renderKas();
 updateSyncStatus(S.kas.filter(k=>!k.synced).length ? 'err' : 'ok');
 </script>
