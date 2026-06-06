@@ -957,37 +957,38 @@ async function syncWargaFromSheets() {
   const { sheetsUrl, apiKey } = S.cfg;
   if (!sheetsUrl) { toast('URL Sheets belum diisi', 'warn'); return; }
   toast('Mengambil data warga…', '', 4000);
-  try {
-    // GET dengan no-cors tidak bisa baca response
-    // Solusi: pakai URL langsung dengan fetch biasa tanpa mode override
-    // Google Apps Script doGet support JSONP/redirect trick
-    const url = sheetsUrl + '?action=get_all&key=' + encodeURIComponent(apiKey || '');
-    // Coba fetch tanpa mode (default same-origin akan fail, tapi Apps Script redirect ke usercontent yang allow)
-    const res = await fetch(url);
-    const text = await res.text();
-    // Response mungkin berisi redirect html, coba parse JSON dari dalamnya
-    let json;
-    try { json = JSON.parse(text); } catch {
-      // Coba extract JSON dari response html redirect
-      const match = text.match(/\{[\s\S]*\}/);
-      json = match ? JSON.parse(match[0]) : null;
-    }
-    if (json && json.status === 'ok' && json.warga?.length) {
-      let added = 0;
-      json.warga.forEach(w => {
-        if (!S.warga.find(x => x.id === w.id)) {
-          S.warga.push({...w, c: S.warga.length % COLORS.length, synced:true});
-          added++;
-        }
-      });
-      save(); renderWarga();
-      toast(added > 0 ? added+' warga baru ditambahkan ✓' : 'Data warga sudah terkini ✓');
-    } else {
-      toast('Gagal ambil data warga dari Sheets', 'error');
-    }
-  } catch (e) {
-    toast('Tidak dapat terhubung ke Sheets', 'error');
+  // Gunakan JSONP untuk bypass CORS pada GET request ke Apps Script
+  jsonpFetch(sheetsUrl + '?action=get_all&key=' + encodeURIComponent(apiKey || '') + '&callback=onWargaSync');
+}
+
+function onWargaSync(json) {
+  if (json && json.status === 'ok' && json.warga && json.warga.length) {
+    let added = 0;
+    json.warga.forEach(w => {
+      if (!S.warga.find(x => x.id === w.id)) {
+        S.warga.push({...w, c: S.warga.length % COLORS.length});
+        added++;
+      }
+    });
+    save(); renderWarga();
+    toast(added > 0 ? added + ' warga ditambahkan ✓' : 'Data warga sudah terkini ✓');
+  } else {
+    toast('Tidak ada data warga di Sheets', 'warn');
   }
+}
+
+function jsonpFetch(url) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = url;
+    script.onerror = () => {
+      script.remove();
+      toast('Gagal terhubung ke Sheets', 'error');
+      reject();
+    };
+    document.head.appendChild(script);
+    setTimeout(() => { script.remove(); }, 10000);
+  });
 }
 
 function updateSyncStatus(s) {
@@ -1102,16 +1103,24 @@ function doPost(e) {
   const res = ContentService.createTextOutput();
   res.setMimeType(ContentService.MimeType.JSON);
   try {
-    const body = JSON.parse(e.postData.contents);
+    // Handle text/plain dan application/json (no-cors kirim sebagai text/plain)
+    let body;
+    const raw = e.postData ? e.postData.contents : '{}';
+    try {
+      body = JSON.parse(raw);
+    } catch(parseErr) {
+      return res.setContent(JSON.stringify(
+        {status:'error', message:'Invalid JSON: ' + raw.substring(0, 100)}));
+    }
     // Validasi key dari body JSON
     if (body.key !== SECRET_KEY) {
       return res.setContent(JSON.stringify(
-        {status:'error', message:'Unauthorized'}));
+        {status:'error', message:'Unauthorized - key tidak cocok'}));
     }
     let result;
     if (body.action === 'add_jimpitan') result = addJimpitan(body);
     else if (body.action === 'add_warga') result = addWarga(body);
-    else result = {message:'Unknown action'};
+    else result = {message:'Unknown action: ' + body.action};
     return res.setContent(JSON.stringify({status:'ok', ...result}));
   } catch(err) {
     return res.setContent(JSON.stringify(
@@ -1140,7 +1149,13 @@ function doGet(e) {
       {status:'error', message:'Unauthorized'}));
   }
   if (action === 'get_all') {
-    return res.setContent(JSON.stringify({status:'ok', ...getAllData()}));
+    const data = JSON.stringify({status:'ok', ...getAllData()});
+    // Support JSONP callback untuk bypass CORS
+    const callback = e.parameter.callback;
+    if (callback) {
+      return res.setContent(callback + '(' + data + ')');
+    }
+    return res.setContent(data);
   }
   return res.setContent(JSON.stringify({status:'error', message:'Unknown action'}));
 }
