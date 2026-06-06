@@ -679,15 +679,16 @@ function manualInput() {
 function renderBarcodes() {
   // Stop camera when leaving scan page
   const container = document.getElementById('barcodeList');
-  container.innerHTML = S.warga.map(w =>
-    `<div class="bc-card">
+  container.innerHTML = S.warga.map(w => {
+    const safeId = w.id.replace(/'/g, '&apos;');
+    return `<div class="bc-card">
       <div class="bc-name">${w.nama}</div>
       <div class="bc-rt">${w.id} · RT ${w.rt}/RW ${w.rw} · No. ${w.alamat}</div>
       <div id="qr_${w.id}" style="display:flex;justify-content:center;margin:8px 0"></div>
       <div style="font-size:11px;color:var(--text3);margin-top:4px">${w.id}</div>
-      <button class="btn btn-gray btn-sm" style="margin-top:8px" onclick="downloadQR('${w.id}','${w.nama.replace(/'/g,'\\'')}')">↓ Unduh QR</button>
-    </div>`
-  ).join('');
+      <button class="btn btn-gray btn-sm" style="margin-top:8px" data-qrid="${safeId}" onclick="downloadQRById(this)">↓ Unduh QR</button>
+    </div>`;
+  }).join('');
 
   // Generate QR codes
   if (window.QRCode) {
@@ -710,9 +711,16 @@ function downloadQR(id, nama) {
   if (!el) { toast('QR belum siap', 'warn'); return; }
   const src = el.tagName === 'CANVAS' ? el.toDataURL('image/png') : el.src;
   const a = document.createElement('a');
-  a.href = src; a.download = 'QR_'+id+'_'+nama.replace(/\s+/g,'_')+'.png';
+  a.href = src; a.download = 'QR_'+id+'.png';
   a.click();
-  toast('✓ QR '+nama.split(' ')[0]+' diunduh!');
+  toast('✓ QR diunduh!');
+}
+
+function downloadQRById(btn) {
+  const id = btn.getAttribute('data-qrid');
+  const w = S.warga.find(x => x.id === id);
+  const nama = w ? w.nama : id;
+  downloadQR(id, nama);
 }
 
 // ══════════════════════════════════════

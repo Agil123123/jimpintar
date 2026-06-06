@@ -1,4 +1,4 @@
-const CACHE_NAME = 'jimpitan-v1.0';
+const CACHE_NAME = 'jimpitan-v1.4';
 const ASSETS = [
   '/',
   '/index.html',
