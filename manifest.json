@@ -2,7 +2,7 @@
   "name": "Jimpitan Desa",
   "short_name": "Jimpitan",
   "description": "Aplikasi pencatatan kas jimpitan warga desa",
-  "start_url": "/index.html",
+  "start_url": "/jimpintar",
   "display": "standalone",
   "background_color": "#085041",
   "theme_color": "#085041",
