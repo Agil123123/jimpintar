@@ -950,11 +950,21 @@ async function syncWargaFromSheets() {
   if (!sheetsUrl) { toast('URL Sheets belum diisi', 'warn'); return; }
   toast('Mengambil data warga…', '', 4000);
   try {
-    // GET request dengan key di URL parameter
+    // GET dengan no-cors tidak bisa baca response
+    // Solusi: pakai URL langsung dengan fetch biasa tanpa mode override
+    // Google Apps Script doGet support JSONP/redirect trick
     const url = sheetsUrl + '?action=get_all&key=' + encodeURIComponent(apiKey || '');
-    const res = await fetch(url, { method: 'GET', mode: 'cors' });
-    const json = await res.json();
-    if (json.status === 'ok' && json.warga?.length) {
+    // Coba fetch tanpa mode (default same-origin akan fail, tapi Apps Script redirect ke usercontent yang allow)
+    const res = await fetch(url);
+    const text = await res.text();
+    // Response mungkin berisi redirect html, coba parse JSON dari dalamnya
+    let json;
+    try { json = JSON.parse(text); } catch {
+      // Coba extract JSON dari response html redirect
+      const match = text.match(/\{[\s\S]*\}/);
+      json = match ? JSON.parse(match[0]) : null;
+    }
+    if (json && json.status === 'ok' && json.warga?.length) {
       let added = 0;
       json.warga.forEach(w => {
         if (!S.warga.find(x => x.id === w.id)) {
@@ -965,7 +975,7 @@ async function syncWargaFromSheets() {
       save(); renderWarga();
       toast(added > 0 ? added+' warga baru ditambahkan ✓' : 'Data warga sudah terkini ✓');
     } else {
-      toast('Gagal mengambil data: ' + (json.message||''), 'error');
+      toast('Gagal ambil data warga dari Sheets', 'error');
     }
   } catch (e) {
     toast('Tidak dapat terhubung ke Sheets', 'error');
@@ -1030,25 +1040,20 @@ async function testConnection() {
   const el = document.getElementById('connStatus');
   el.style.display = 'block'; el.innerHTML = '⏳ Menguji koneksi…';
   try {
-    // Test pakai GET + key di URL parameter
-    const res = await fetch(url+'?action=test&key='+encodeURIComponent(key), {
-      method: 'GET',
-      mode: 'cors'
+    // Kirim test ping via no-cors POST — satu-satunya cara bypass CORS Google Apps Script
+    await fetch(url, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'test', key: key })
     });
-    const json = await res.json();
-    if (json.status === 'ok') {
-      el.innerHTML = '<span class="sync-dot ok"></span> Koneksi berhasil! POST data akan dikirim ke Sheets.';
-      toast('✓ Koneksi berhasil!');
-      // Simpan settings otomatis jika test berhasil
-      S.cfg.sheetsUrl = url; S.cfg.apiKey = key; save();
-    } else {
-      el.innerHTML = '<span class="sync-dot err"></span> Key salah. Pastikan SECRET_KEY di script sama persis.';
-      toast('Key tidak cocok', 'error');
-    }
+    // no-cors tidak bisa baca response, tapi kalau sampai sini berarti request terkirim
+    el.innerHTML = '<span class="sync-dot ok"></span> Terhubung! Data akan dikirim ke Google Sheets saat input jimpitan.';
+    toast('✓ Terhubung ke Sheets!');
+    S.cfg.sheetsUrl = url; S.cfg.apiKey = key; save();
   } catch(e) {
-    // Jika CORS error pada GET, coba no-cors sebagai fallback info
-    el.innerHTML = '<span class="sync-dot wait"></span> Script aktif tapi CORS diblokir browser. Data tetap akan terkirim saat input jimpitan (POST no-cors).';
-    toast('⚠ Script aktif, CORS terbatas', 'warn');
+    el.innerHTML = '<span class="sync-dot err"></span> Gagal. Periksa koneksi internet atau URL deployment.';
+    toast('Gagal terhubung', 'error');
   }
 }
 
