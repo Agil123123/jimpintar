@@ -424,7 +424,7 @@ const APP_CONFIG = {
   desa     : 'Dukuh Wonogiri',   // ← Ganti nama desa di sini
   rtrw     : 'RT 10 / RW 03',    // ← Ganti RT/RW di sini
   nominal  : 500,                 // ← Nominal jimpitan per hari (Rp)
-  sheetsUrl: 'https://script.google.com/macros/s/AKfycbzNs2jG4GvRbFgOsltjMFpJP6daRKQwFc4CmHiTOTO8-LcsNf-SQtHUBgQbpmjkiIqi/exec', // ← URL Apps Script
+  sheetsUrl: 'https://script.google.com/macros/s/AKfycbwbqbeTVKkg31r66buAC0u-7xnWsarEG8oswvY4mpM-vUQqhqQwsx-FmF2A_0MrIN4SZw/exec', // ← URL Apps Script
   apiKey   : '',                  // ← Kosong jika script tanpa validasi key
 };
 // ══════════════════════════════════════
@@ -949,41 +949,53 @@ async function manualSync() {
 }
 
 async function syncWargaFromSheets() {
-  const { sheetsUrl, apiKey } = S.cfg;
+  const { sheetsUrl } = S.cfg;
   if (!sheetsUrl) { toast('URL Sheets belum diisi', 'warn'); return; }
-  toast('Mengambil data warga…', '', 4000);
-  // Gunakan JSONP untuk bypass CORS pada GET request ke Apps Script
-  jsonpFetch(sheetsUrl + '?action=get_all&key=' + encodeURIComponent(apiKey || '') + '&callback=onWargaSync');
-}
+  toast('Mengambil data warga…', '', 5000);
 
-function onWargaSync(json) {
-  if (json && json.status === 'ok' && json.warga && json.warga.length) {
-    let added = 0;
-    json.warga.forEach(w => {
-      if (!S.warga.find(x => x.id === w.id)) {
-        S.warga.push({...w, c: S.warga.length % COLORS.length});
-        added++;
-      }
-    });
-    save(); renderWarga();
-    toast(added > 0 ? added + ' warga ditambahkan ✓' : 'Data warga sudah terkini ✓');
-  } else {
-    toast('Tidak ada data warga di Sheets', 'warn');
+  // Kirim POST no-cors dengan action get_all
+  // Karena no-cors tidak bisa baca response, kita pakai trik:
+  // Simpan permintaan ke Sheets dulu, lalu ambil lewat window.open trick
+  // Solusi terbaik: minta user buka URL di tab baru dan copy-paste data
+  // ATAU: gunakan fetch langsung (Apps Script sudah set redirect ke usercontent yang allow CORS pada GET)
+  try {
+    // Apps Script GET request di-redirect ke googleusercontent.com
+    // yang sudah include Access-Control-Allow-Origin: *
+    const url = sheetsUrl + '?action=get_all';
+    const res = await fetch(url, { method: 'GET' });
+    const json = await res.json();
+    prosesDataWarga(json);
+  } catch(e1) {
+    // Jika gagal karena CORS, coba via no-cors POST lalu tanya user reload
+    toast('Sinkron otomatis gagal — coba tombol Muat Ulang', 'warn');
+    console.error('syncWarga error:', e1);
   }
 }
 
-function jsonpFetch(url) {
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = url;
-    script.onerror = () => {
-      script.remove();
-      toast('Gagal terhubung ke Sheets', 'error');
-      reject();
-    };
-    document.head.appendChild(script);
-    setTimeout(() => { script.remove(); }, 10000);
-  });
+function prosesDataWarga(json) {
+  if (json && json.status === 'ok' && json.warga && json.warga.length) {
+    let added = 0, updated = 0;
+    json.warga.forEach(w => {
+      const existing = S.warga.find(x => x.id === w.id);
+      if (!existing) {
+        S.warga.push({...w, c: S.warga.length % COLORS.length});
+        added++;
+      } else {
+        // Update data jika ada perubahan
+        Object.assign(existing, w);
+        updated++;
+      }
+    });
+    save(); renderWarga();
+    const msg = [];
+    if (added) msg.push(added + ' warga baru');
+    if (updated) msg.push(updated + ' diperbarui');
+    toast(msg.length ? msg.join(', ') + ' ✓' : 'Data warga sudah terkini ✓');
+  } else if (json && json.warga && json.warga.length === 0) {
+    toast('Belum ada warga di Sheets', 'warn');
+  } else {
+    toast('Gagal membaca data: ' + (json?.message || 'unknown'), 'error');
+  }
 }
 
 function updateSyncStatus(s) {
@@ -1299,12 +1311,57 @@ if ('serviceWorker' in navigator) {
 }
 
 // ══ Init ══
-// Auto sinkron warga dari Sheets saat pertama buka (jika warga lokal kosong)
-if (S.warga.length === 0 && S.cfg.sheetsUrl) {
-  setTimeout(() => syncWargaFromSheets(), 1500);
-}
 renderKas();
 updateSyncStatus(S.kas.filter(k=>!k.synced).length ? 'err' : 'ok');
+
+// Auto sinkron warga dari Sheets setiap buka aplikasi
+// Sehingga semua perangkat selalu punya data terbaru
+if (S.cfg.sheetsUrl) {
+  setTimeout(async () => {
+    try {
+      const url = S.cfg.sheetsUrl + '?action=get_all';
+      const res = await fetch(url);
+      const json = await res.json();
+      if (json.status === 'ok') {
+        // Sinkron warga
+        let addedW = 0;
+        if (json.warga && json.warga.length) {
+          json.warga.forEach(w => {
+            const ex = S.warga.find(x => x.id === w.id);
+            if (!ex) { S.warga.push({...w, c: S.warga.length % COLORS.length}); addedW++; }
+            else Object.assign(ex, w);
+          });
+        }
+        // Sinkron kas juga — tandai yang sudah ada di Sheets sebagai synced
+        if (json.jimpitan && json.jimpitan.length) {
+          const sheetsIds = new Set(json.jimpitan.map(j => String(j.id)));
+          S.kas.forEach(k => { if (sheetsIds.has(String(k.id))) k.synced = true; });
+          // Tambah data kas dari Sheets yang belum ada lokal (untuk browser baru)
+          let addedK = 0;
+          json.jimpitan.forEach(j => {
+            if (!S.kas.find(k => String(k.id) === String(j.id))) {
+              S.kas.push({...j, synced: true});
+              addedK++;
+            }
+          });
+        }
+        save();
+        // Re-render semua halaman
+        renderKas();
+        updateSyncStatus('ok');
+        if (addedW > 0) {
+          renderWarga();
+          // Kalau sedang di halaman warga, perbarui tampilan
+          if (document.getElementById('page-warga').classList.contains('active')) renderWarga();
+        }
+      }
+    } catch(e) {
+      // Gagal sinkron otomatis — tidak perlu notifikasi, user bisa manual
+      console.log('Auto-sync gagal:', e.message);
+      updateSyncStatus('err');
+    }
+  }, 1000);
+}
 </script>
 </body>
 </html>
