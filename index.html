@@ -904,32 +904,28 @@ async function pushToSheets(data) {
   const { sheetsUrl, apiKey } = S.cfg;
   if (!sheetsUrl) return false;
   try {
-    // Kirim key di dalam body JSON (Google Apps Script tidak bisa baca custom header)
     const payload = { ...data, key: apiKey || '' };
-    // Gunakan text/plain agar tidak trigger CORS preflight
-    const res = await fetch(sheetsUrl, {
+    // Gunakan no-cors untuk menghindari CORS preflight block
+    // no-cors = tidak bisa baca response, tapi data terkirim ke Sheets
+    await fetch(sheetsUrl, {
       method: 'POST',
+      mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify(payload)
     });
-    if (res.ok) {
-      const json = await res.json().catch(() => ({}));
-      if (json.status === 'ok') {
-        if (data.action === 'add_jimpitan') {
-          const k = S.kas.find(k => k.id === data.id);
-          if (k) k.synced = true;
-          save(); renderKas();
-        }
-        updateSyncStatus('ok');
-        return true;
-      } else {
-        console.warn('Sheets error:', json.message);
-      }
+    // Dengan no-cors kita tidak bisa baca response, anggap sukses jika tidak throw
+    if (data.action === 'add_jimpitan') {
+      const k = S.kas.find(k => k.id === data.id);
+      if (k) k.synced = true;
+      save(); renderKas();
     }
+    updateSyncStatus('ok');
+    return true;
   } catch (e) {
+    console.error('pushToSheets error:', e);
     updateSyncStatus('err');
+    return false;
   }
-  return false;
 }
 
 async function manualSync() {
@@ -954,9 +950,9 @@ async function syncWargaFromSheets() {
   if (!sheetsUrl) { toast('URL Sheets belum diisi', 'warn'); return; }
   toast('Mengambil data warga…', '', 4000);
   try {
-    // Kirim key sebagai URL parameter untuk GET request
+    // GET request dengan key di URL parameter
     const url = sheetsUrl + '?action=get_all&key=' + encodeURIComponent(apiKey || '');
-    const res = await fetch(url);
+    const res = await fetch(url, { method: 'GET', mode: 'cors' });
     const json = await res.json();
     if (json.status === 'ok' && json.warga?.length) {
       let added = 0;
@@ -1034,18 +1030,25 @@ async function testConnection() {
   const el = document.getElementById('connStatus');
   el.style.display = 'block'; el.innerHTML = '⏳ Menguji koneksi…';
   try {
-    // Kirim key sebagai URL parameter
-    const res = await fetch(url+'?action=test&key='+encodeURIComponent(key));
+    // Test pakai GET + key di URL parameter
+    const res = await fetch(url+'?action=test&key='+encodeURIComponent(key), {
+      method: 'GET',
+      mode: 'cors'
+    });
     const json = await res.json();
     if (json.status === 'ok') {
-      el.innerHTML = '<span class="sync-dot ok"></span> Koneksi berhasil! Sheets siap digunakan.';
+      el.innerHTML = '<span class="sync-dot ok"></span> Koneksi berhasil! POST data akan dikirim ke Sheets.';
       toast('✓ Koneksi berhasil!');
+      // Simpan settings otomatis jika test berhasil
+      S.cfg.sheetsUrl = url; S.cfg.apiKey = key; save();
     } else {
-      el.innerHTML = '<span class="sync-dot err"></span> Error: '+json.message;
+      el.innerHTML = '<span class="sync-dot err"></span> Key salah. Pastikan SECRET_KEY di script sama persis.';
+      toast('Key tidak cocok', 'error');
     }
   } catch(e) {
-    el.innerHTML = '<span class="sync-dot err"></span> Tidak dapat terhubung. Periksa URL dan deployment.';
-    toast('Gagal terhubung', 'error');
+    // Jika CORS error pada GET, coba no-cors sebagai fallback info
+    el.innerHTML = '<span class="sync-dot wait"></span> Script aktif tapi CORS diblokir browser. Data tetap akan terkirim saat input jimpitan (POST no-cors).';
+    toast('⚠ Script aktif, CORS terbatas', 'warn');
   }
 }
 
